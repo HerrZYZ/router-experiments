@@ -4,6 +4,12 @@ using CFMMRouter
 using JSON
 using Plots
 
+# Create directory for saving figures if not exists
+figs_dir = joinpath(@__DIR__, "figs")
+if !isdir(figs_dir)
+    mkpath(figs_dir)
+end
+
 include("loadpools.jl")
 
 function route_many(eth_to_liquidate, loaded_pools)
@@ -63,11 +69,16 @@ function run_experiment(eth_amount)
     return usdc_routing, usdc_single
 end
 
-
 eth_amount = 10 .^ range(3, log10(100_000); length = 50)
 usdc_routing, usdc_single = run_experiment(eth_amount)
 surplus = usdc_routing .- usdc_single
 
+# Print data for verification
+println("usdc_routing:", usdc_routing)
+println("usdc_single:", usdc_single)
+println("surplus:", surplus)
+
+# Ensure plots are generated and saved correctly
 price_plt = plot(
     eth_amount,
     usdc_routing ./ eth_amount,
@@ -90,7 +101,8 @@ plot!(price_plt,
     label="Single Pool",
     color=:red,
 )
-savefig(price_plt, joinpath(@__DIR__, "figs", "price_impact.pdf"))
+savefig(price_plt, joinpath(figs_dir, "price_impact.pdf"))
+println("Saved price_impact.pdf")
 
 routing_surplus_plt = plot(
     eth_amount,
@@ -103,4 +115,5 @@ routing_surplus_plt = plot(
     dpi=300,
     color=:blue,
 )
-savefig(routing_surplus_plt, joinpath(@__DIR__, "figs", "routing_surplus.pdf"))
+savefig(routing_surplus_plt, joinpath(figs_dir, "routing_surplus.pdf"))
+println("Saved routing_surplus.pdf")

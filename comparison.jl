@@ -1,10 +1,13 @@
 using Pkg
 Pkg.activate(@__DIR__)
 using LinearAlgebra, Random, BenchmarkTools, StatsBase
-using JuMP, MosekTools
+using JuMP, MosekTools  # JuMP includes MathOptInterface
 using Plots, LaTeXStrings
 using CFMMRouter
-const MOI = JuMP.MathOptInterface
+using MathOptInterface
+
+# Alias for MathOptInterface
+const MOI = MathOptInterface
 
 function run_trial_router(n_pools, n_tokens, Rs, γ, As, ws, prices)
     pools = [
@@ -27,7 +30,7 @@ function run_trial_router(n_pools, n_tokens, Rs, γ, As, ws, prices)
 end
 
 function run_trial_mosek(n_pools, n_tokens, Rs, γ, As, ws, prices)
-    # construct model
+    # Construct model
     routing = Model(Mosek.Optimizer)
     set_silent(routing)
     @variable(routing, Ψ[1:n_tokens])
@@ -38,12 +41,12 @@ function run_trial_mosek(n_pools, n_tokens, Rs, γ, As, ws, prices)
     for i in 1:n_pools
         Ri = Rs[:,i]
         ϕRi = sqrt(Ri[1]*Ri[2])
-        @constraint(routing, vcat(Ri + γ * Δ[i] - Λ[i], ϕRi) in MOI.PowerCone(ws[i]))
+        @constraint(routing, vcat(Ri + γ * Δ[i] - Λ[i], ϕRi) in MOI.PowerCone(1 - ws[i]))  # Fix ws[i] reference
         @constraint(routing, Δ[i] .≥ 0)
         @constraint(routing, Λ[i] .≥ 0)
     end
 
-    # net trade constraint
+    # Net trade constraint
     net_trade = zeros(AffExpr, n_tokens)
     for i in 1:n_pools
         @. net_trade[As[i]] += Λ[i] - Δ[i]
@@ -66,7 +69,7 @@ end
 
 
 function run_experiment(ns_pools, factors; rseed=0)
-    # Random.seed!(rseed)
+    # Initialize results arrays
     time_router = zeros(length(ns_pools), length(factors))
     time_mosek = zeros(length(ns_pools), length(factors))
     obj_router = zeros(length(ns_pools), length(factors))
@@ -83,10 +86,12 @@ function run_experiment(ns_pools, factors; rseed=0)
             As = [sample(collect(1:n_tokens), 2, replace=false) for i in 1:n_pools]
             prices = rand(n_tokens)
             
+            # Run Router trial
             tt, Ψ = run_trial_router(n_pools, n_tokens, Rs, γ, As, ws, prices)
             time_router[i, j] = tt
             obj_router[i, j] = dot(Ψ, prices)
             
+            # Run Mosek trial
             tt, Ψ = run_trial_mosek(n_pools, n_tokens, Rs, γ, As, ws, prices)
             time_mosek[i, j] = tt
             obj_mosek[i, j] = dot(Ψ, prices)
@@ -97,29 +102,24 @@ function run_experiment(ns_pools, factors; rseed=0)
     return time_router, time_mosek, obj_router, obj_mosek
 end
 
-
+# Define parameters for the experiment
 ns_pools = round.(Int, 10 .^ range(2, 5, 25))
-# ns_pools = round.(Int, range(1e2, 10e4, 20))
 factors = [2]
 time_router, time_mosek, obj_router, obj_mosek = run_experiment(ns_pools, factors)
 obj_diff = obj_router - obj_mosek
 
+# Plot results for solve time
 plt = plot(
     ns_pools,
     time_router,
     lw=3,
-    # yaxis=:log,
-    # xaxis=:log,
     title="Routing Solve Time",
     ylabel="Time (seconds)",
     xlabel="Number of Swap Pools (m)",
     label="CFMMRouter",
     dpi=300,
     xlims=(minimum(ns_pools), maximum(ns_pools)),
-    # minorgrid=true,
-    margin=3Plots.PlotMeasures.mm,
     legend=:topleft,
-    right_margin=5Plots.mm,
     color=:blue
 )
 plot!(plt,
@@ -131,18 +131,16 @@ plot!(plt,
 )
 savefig(plt, joinpath(@__DIR__, "figs/solve-time-3.pdf"))
 
+# Plot results for routing objective
 plt_obj = plot(
     ns_pools, 
     obj_router,
     title="Routing Objective",
     ylabel="Objective Value",
     xlabel="Number of Swap Pools (m)",
-    # xaxis=:log,
-    # yaxis=:log,
     xlims=(minimum(ns_pools), maximum(ns_pools)),
     lw=3,
     label="CFMMRouter",
-    right_margin=15Plots.mm,
     color=:blue,
     legend=:topleft
 )
@@ -158,8 +156,7 @@ plot!(twinx(),
     obj_diff ./ obj_mosek,
     xlims=(minimum(ns_pools), maximum(ns_pools)),
     legend=false,
-    ylabel="Relative differnce",
-    # xaxis=:log,
+    ylabel="Relative difference",
     lw=1,
     ls=:dash,
     color=:purple,

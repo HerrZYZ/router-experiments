@@ -2,6 +2,7 @@ using Pkg
 Pkg.activate(@__DIR__)
 using Dates
 using JSON, HTTP
+using CSV, DataFrames
 
 @enum Mode begin
     pools_mode
@@ -9,13 +10,20 @@ using JSON, HTTP
     ticks_mode
 end
 
+# Function to convert the fetched data to a DataFrame and save as CSV
+function save_to_csv(data, filepath)
+    # Convert the data to a DataFrame if possible
+    df = DataFrame(data["pool"])
+    # Save the DataFrame as a CSV file
+    CSV.write(filepath, df)
+end
+
 # Fetches UniV3 data from TheGraph
 function get_uniswap_data(; mode=pools_mode, skip=0, pool_address=nothing, block=nothing)
-    url = "https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3"
+    url = "https://gateway.thegraph.com/api/84ad8a78948ee584423008ae10e30eb9/subgraphs/id/5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV"
     header = Dict("Content-Type" => "application/json")
 
     query = if mode == pools_mode
-
         block_modifier_query, block_modifier_pools = if !isnothing(block)
             "\$block:Int", "block: {number: \$block}"
         else
@@ -89,7 +97,6 @@ function get_uniswap_data(; mode=pools_mode, skip=0, pool_address=nothing, block
                 tickIdx
                 liquidityGross
                 liquidityNet
-
                 price0
                 price1
             }
@@ -139,6 +146,14 @@ function get_specific_pools(pool_ids; limit=5, block=nothing)
 end
 
 function get_experiment_pools(block=nothing)
+    # Define the directory path
+    data_dir = joinpath(@__DIR__, "data")
+    
+    # Check if the directory exists, if not, create it
+    if !isdir(data_dir)
+        mkpath(data_dir)
+    end
+
     DAI_USDC_0_01 = "0x5777d92f208679DB4b9778590Fa3CAB3aC9e2168"
     DAI_ETH_0_05 = "0x60594a405d53811d3BC4766596EFD80fd545A270"
     DAI_ETH_0_30 = "0xC2e9F25Be6257c210d7Adf0D4Cd6E3E881ba25f8"
@@ -167,14 +182,22 @@ function get_experiment_pools(block=nothing)
 
     # Single pool
     res = get_specific_pools([USDC_ETH_0_30]; block)
-    open(joinpath(@__DIR__, "data", "univ3_one_pool.json"), "w") do file
+    open(joinpath(data_dir, "univ3_one_pool.json"), "w") do file
         write(file, JSON.json(res, 4))
     end
 
+    # Save to CSV
+    save_to_csv(res[1], joinpath(data_dir, "univ3_one_pool.csv"))
+
     # Multiple pools
     res = get_specific_pools(pool_list; limit=100, block)
-    open(joinpath(@__DIR__, "data", "univ3_top_pools.json"), "w") do file
+    open(joinpath(data_dir, "univ3_top_pools.json"), "w") do file
         write(file, JSON.json(res, 4))
+    end
+
+    # Save to CSV
+    for (i, pool_data) in enumerate(res)
+        save_to_csv(pool_data, joinpath(data_dir, "univ3_top_pools_$i.csv"))
     end
 
     nothing
